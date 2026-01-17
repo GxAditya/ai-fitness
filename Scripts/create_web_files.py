@@ -335,17 +335,17 @@ def create_fitness_website():
                 <div class="demo-card">
                     <h4>🚀 Desktop Application</h4>
                     <p>Full-featured AI trainer with all exercises</p>
-                    <a href="../run_fitness_trainer.py" class="cta-button" style="margin-top: 1rem;">
-                        Download Desktop App
-                    </a>
+                    <button onclick="sendCommand('launch_enhanced')" class="cta-button" style="margin-top: 1rem; border:none; cursor:pointer;">
+                        Launch Desktop App
+                    </button>
                 </div>
 
                 <div class="demo-card" style="margin-top: 2rem;">
                     <h4>🌐 Web Version</h4>
                     <p>Try the basic version in your browser</p>
-                    <a href="../web/professional_web_app.py" class="cta-button" style="margin-top: 1rem; background: #48bb78;">
+                    <button onclick="sendCommand('launch_streamlit')" class="cta-button" style="margin-top: 1rem; background: #48bb78; border:none; cursor:pointer;">
                         Launch Web App
-                    </a>
+                    </button>
                 </div>
             </div>
             
@@ -395,7 +395,32 @@ def create_fitness_website():
     </footer>
 
     <script>
-        // Smooth scrolling for navigation links
+        async function sendCommand(command) {
+            const statusDiv = document.getElementById('status-message');
+            if(statusDiv) statusDiv.textContent = "⏳ Processing...";
+
+            try {
+                const response = await fetch('/api/command', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ command: command })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    alert(data.message);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('Connection Error: Is the Python server running?');
+                console.error('Error:', error);
+            }
+        }
+
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
             anchor.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -405,7 +430,6 @@ def create_fitness_website():
             });
         });
 
-        // Navbar background on scroll
         window.addEventListener('scroll', function() {
             const navbar = document.querySelector('.navbar');
             if (window.scrollY > 100) {
@@ -425,15 +449,73 @@ def create_fitness_website():
 def create_web_server():
     """Create the web server file"""
     content = '''"""
-Simple web server for AI Fitness Trainer website
+Smart Web Server for AI Fitness Trainer
+Handles communication between the HTML frontend and Python backend scripts.
 """
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import webbrowser
 import os
+import sys
+import subprocess
+import json
 import socket
+import threading
+
+PORT = 8000
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(ROOT_DIR)
+
+class FitnessHandler(SimpleHTTPRequestHandler):
+    """Custom handler to process API requests from the frontend"""
+    
+    def do_POST(self):
+        """Handle POST requests (Button clicks)"""
+        if self.path.startswith('/api/'):
+            self.handle_api_command()
+        else:
+            self.send_error(404, "API endpoint not found")
+
+    def handle_api_command(self):
+        """Execute backend scripts based on frontend commands"""
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
+        command = data.get('command')
+        response = {"status": "success", "message": "", "action": command}
+        
+        try:
+            if command == 'launch_desktop':
+                script_path = os.path.join(PROJECT_ROOT, 'run.py')
+                subprocess.Popen([sys.executable, script_path, '--mode', 'desktop'])
+                response["message"] = "🚀 Desktop Application Launched!"
+                
+            elif command == 'launch_enhanced':
+                script_path = os.path.join(PROJECT_ROOT, 'run.py')
+                subprocess.Popen([sys.executable, script_path, '--mode', 'enhanced'])
+                response["message"] = "💪 Enhanced Trainer Launched!"
+                
+            elif command == 'launch_streamlit':
+                script_path = os.path.join(PROJECT_ROOT, 'web', 'professional_web_app.py')
+                subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', script_path])
+                response["message"] = "🌐 Streamlit Web App Starting..."
+                
+            else:
+                response["status"] = "error"
+                response["message"] = "Unknown command"
+
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode('utf-8'))
+            
+        except Exception as e:
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
 
 def find_available_port(start_port=8000):
-    """Find an available port starting from start_port"""
     port = start_port
     while True:
         try:
@@ -443,32 +525,24 @@ def find_available_port(start_port=8000):
         except OSError:
             port += 1
 
-def start_web_server():
-    # Get the directory where this script is located
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(current_dir)
+def start_server():
+    os.chdir(ROOT_DIR)
+    port = find_available_port(PORT)
     
-    port = find_available_port()
+    print(f"🚀 AI Fitness Server Running at http://localhost:{port}")
+    print("✨ Connects Frontend Controls -> Backend Scripts")
+    print("💡 Press Ctrl+C to stop")
     
-    print("🚀 Starting AI Fitness Trainer Website...")
-    print(f"📍 Website running at: http://localhost:{port}")
-    print("💡 Press Ctrl+C to stop the server")
-    print("🌐 Your browser should open automatically...")
+    threading.Timer(1.0, lambda: webbrowser.open(f'http://localhost:{port}/fitness_website.html')).start()
     
-    # Open browser automatically
-    webbrowser.open(f'http://localhost:{port}/fitness_website.html')
-    
+    server = HTTPServer(('localhost', port), FitnessHandler)
     try:
-        server = HTTPServer(('', port), SimpleHTTPRequestHandler)
-        print(f"✅ Server started successfully on port {port}")
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\\n👋 Server stopped by user")
-    except Exception as e:
-        print(f"❌ Error starting server: {e}")
+        print("\n🛑 Server stopped.")
 
 if __name__ == "__main__":
-    start_web_server()
+    start_server()
 '''
     
     with open('web/web_server.py', 'w', encoding='utf-8') as f:
